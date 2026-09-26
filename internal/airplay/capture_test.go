@@ -376,6 +376,49 @@ func TestPipeWireVideoSourceCopiesPortalBuffers(t *testing.T) {
 	}
 }
 
+func TestPipeWireNodeSourceTargetsNameOrID(t *testing.T) {
+	for _, tt := range []struct {
+		name string
+		node string
+		want string
+	}{
+		// target-object resolves a name or a serial, never a node ID.
+		{name: "name", node: "gamescope", want: "target-object=gamescope"},
+		{name: "numeric id", node: "39", want: "path=39"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got := pipeWireNodeSourceStage(tt.node, 30)
+			want := gstStage{
+				"pipewiresrc",
+				tt.want,
+				"do-timestamp=true",
+				"keepalive-time=33",
+				"always-copy=true",
+			}
+			if !reflect.DeepEqual(got, want) {
+				t.Fatalf("PipeWire node source stage = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// A named node identifies its source without a portal, so preparation must not
+// require a display server in the environment.
+func TestPipeWireNodeCaptureNeedsNoDisplayServer(t *testing.T) {
+	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("DISPLAY", "")
+
+	_, err := PrepareCapture(context.Background(), CaptureConfig{
+		FPS:          30,
+		HWAccel:      "none",
+		VideoCodec:   VideoCodecH264,
+		PipeWireNode: "gamescope",
+	})
+	if err != nil && strings.Contains(err.Error(), "no display server detected") {
+		t.Fatalf("named PipeWire node still required a display server: %v", err)
+	}
+}
+
 func TestPortalStreamDimensions(t *testing.T) {
 	for _, tt := range []struct {
 		name  string

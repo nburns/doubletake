@@ -326,6 +326,10 @@ doubletake -target 192.168.1.77 -hwaccel nvenc   # NVIDIA
 doubletake -target 192.168.1.77 -hwaccel vaapi   # Intel/AMD
 doubletake -target 192.168.1.77 -hwaccel v4l2    # V4L2 stateful encoders (many ARM SoCs)
 
+# Capture a compositor that publishes its own PipeWire node and has no
+# screencast portal (gamescope on SteamOS); pw-dump lists the candidates
+doubletake -target 192.168.1.77 -pipewire-node gamescope -hwaccel v4l2
+
 # OpenH264 software encoding
 doubletake -target 192.168.1.77 -hwaccel openh264
 
@@ -363,6 +367,7 @@ doubletake-ctl disconnect
 | `-bitrate` | 0 | Video bitrate in kbps (`0` = auto) |
 | `-target-latency-ms` | 0 | Joint audio/video playout latency override in milliseconds (`0` = automatic AirPlay policy with separate defaults) |
 | `-hwaccel` | auto | Encoder preference: `auto`, `nvenc`, `vaapi`, `v4l2`, `openh264`, `none` |
+| `-pipewire-node` | | Capture a published PipeWire node by name or id instead of using the screencast portal |
 | `-video-codec` | auto | Screen codec: capability-driven `auto`, forced `h264`, or forced `hevc` |
 | `-no-encrypt` | false | Disable RTSP header encryption (debugging only) |
 | `-direct-key` | false | Use `shk`/`shiv` directly without SHA-512 derivation |

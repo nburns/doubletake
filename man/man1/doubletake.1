@@ -93,6 +93,15 @@ the capture rate immediately before the encoder so the requested
 .B \-fps
 still negotiates.
 .TP
+.B \-pipewire-node \fINODE\fR
+Capture an already-published PipeWire video node instead of requesting one from
+the screencast portal. \fINODE\fR is a node name, or a numeric node ID. This is
+needed on sessions whose compositor publishes its output directly but offers no
+\fBorg.freedesktop.portal.ScreenCast\fR implementation, such as gamescope on
+SteamOS; list candidates with \fBpw-dump\fR. A name survives the renumbering
+that makes a saved ID unusable. Because the node identifies the source on its
+own, this works with neither \fB$WAYLAND_DISPLAY\fR nor \fB$DISPLAY\fR set.
+.TP
 .B \-video-codec \fICODEC\fR
 Screen codec: capability-driven \fBauto\fR (default), forced \fBh264\fR, or
 forced \fBhevc\fR. Automatic HEVC requires receiver feature 42, a session-time

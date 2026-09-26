@@ -79,6 +79,7 @@ func main() {
 	socketPath := flag.String("socket", daemon.DefaultSocketPath(), "Unix socket path for daemon control interface")
 	x11WindowID := flag.String("x11-window-id", "", "X11 window id to capture, decimal or 0xhex")
 	x11WindowName := flag.String("x11-window-name", "", "X11 window name to capture; prefer -x11-window-id")
+	pipewireNode := flag.String("pipewire-node", "", "PipeWire video node to capture by name or id, bypassing the screencast portal")
 	noCursor := flag.Bool("no-cursor", false, "Don't show the mouse cursor in the captured video")
 	flag.Parse()
 	if err := airplay.ValidateHWAccel(*hwaccel); err != nil {
@@ -104,22 +105,23 @@ func main() {
 
 	if *daemonize {
 		runDaemon(daemon.Config{
-			SocketPath:  *socketPath,
-			CredFile:    *credFile,
-			CredBackend: *credBackend,
-			FPS:         *fps,
-			Bitrate:     *bitrate,
-			PortMin:     portMin,
-			PortMax:     portMax,
-			HWAccel:     *hwaccel,
-			VideoCodec:  airplay.VideoCodec(*videoCodec),
-			Debug:       *debug,
-			TestMode:    *testMode,
-			NoEncrypt:   *noEncrypt,
-			DirectKey:   *directKey,
-			NoAudio:     *noAudio,
-			ShowCursor:  !*noCursor,
-			Code:        credential,
+			SocketPath:   *socketPath,
+			CredFile:     *credFile,
+			CredBackend:  *credBackend,
+			FPS:          *fps,
+			Bitrate:      *bitrate,
+			PortMin:      portMin,
+			PortMax:      portMax,
+			HWAccel:      *hwaccel,
+			VideoCodec:   airplay.VideoCodec(*videoCodec),
+			Debug:        *debug,
+			TestMode:     *testMode,
+			NoEncrypt:    *noEncrypt,
+			DirectKey:    *directKey,
+			NoAudio:      *noAudio,
+			ShowCursor:   !*noCursor,
+			PipeWireNode: *pipewireNode,
+			Code:         credential,
 		})
 		return
 	}
@@ -345,6 +347,7 @@ func main() {
 		VideoCodec:    airplay.VideoCodec(*videoCodec),
 		X11WindowID:   xid,
 		X11WindowName: *x11WindowName,
+		PipeWireNode:  *pipewireNode,
 		ShowCursor:    !*noCursor,
 	}
 	var capturePreparation *airplay.CapturePreparation

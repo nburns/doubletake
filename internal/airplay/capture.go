@@ -35,6 +35,13 @@ type CaptureConfig struct {
 	X11WindowID   uint64
 	X11WindowName string
 
+	// PipeWireNode captures an already-published PipeWire video node instead of
+	// asking the screencast portal for one. A numeric value selects a node ID, any
+	// other value selects a node name. Compositors that publish their output
+	// directly (gamescope on SteamOS) need this because their session offers no
+	// org.freedesktop.portal.ScreenCast implementation.
+	PipeWireNode string
+
 	ShowCursor bool // show the mouse cursor in the captured video (Wayland and X11)
 
 	RestoreToken     string
@@ -81,6 +88,7 @@ type capturePreparationKind uint8
 const (
 	capturePreparationX11 capturePreparationKind = iota
 	capturePreparationWayland
+	capturePreparationPipeWire
 	capturePreparationTest
 )
 
@@ -141,7 +149,11 @@ func PrepareCapture(ctx context.Context, cfg CaptureConfig) (*CapturePreparation
 		return nil, err
 	}
 	kind := capturePreparationX11
-	if (cfg.X11WindowID != 0 || cfg.X11WindowName != "") && os.Getenv("DISPLAY") != "" {
+	if cfg.PipeWireNode != "" {
+		// An explicitly named node identifies the source on its own, so this path
+		// deliberately does not require a display server in the environment.
+		kind = capturePreparationPipeWire
+	} else if (cfg.X11WindowID != 0 || cfg.X11WindowName != "") && os.Getenv("DISPLAY") != "" {
 		kind = capturePreparationX11
 	} else if os.Getenv("WAYLAND_DISPLAY") != "" {
 		kind = capturePreparationWayland
@@ -190,6 +202,12 @@ func PrepareCapture(ctx context.Context, cfg CaptureConfig) (*CapturePreparation
 
 	if err := exec.Command("gst-inspect-1.0", "pipewiresrc").Run(); err != nil {
 		return nil, fmt.Errorf("GStreamer 'pipewiresrc' plugin not found; install gst-pipewire")
+	}
+
+	if kind == capturePreparationPipeWire {
+		// The node is already published, so there is no portal session to acquire
+		// and nothing interactive to complete before the receiver session starts.
+		return preparation, nil
 	}
 	nodeID, pwFd, dbusConn, restoreToken, err := requestScreencast(ctx, cfg.RestoreToken, cfg.ShowCursor, &preparation.streamSize)
 	if err != nil {
@@ -355,8 +373,8 @@ func (p *CapturePreparation) startWithContextAndCodec(lifetime context.Context, 
 	}
 
 	switch kind {
-	case capturePreparationWayland:
-		return startPreparedWaylandCapture(ctx, cfg, encoder, nodeID, pwFd, dbusConn, streamSize, timestampedOutput)
+	case capturePreparationWayland, capturePreparationPipeWire:
+		return startPreparedPipeWireCapture(ctx, cfg, encoder, nodeID, pwFd, dbusConn, streamSize, timestampedOutput)
 	case capturePreparationX11:
 		return startPreparedX11Capture(ctx, cfg, encoder, timestampedOutput)
 	case capturePreparationTest:
@@ -728,10 +746,29 @@ func frameIntervalMillis(fps int) int {
 }
 
 func pipeWireVideoSourceStage(fd int, nodeID uint32, fps int) gstStage {
-	return gstStage{
+	return append(gstStage{
 		"pipewiresrc",
 		fmt.Sprintf("fd=%d", fd),
 		fmt.Sprintf("path=%d", nodeID),
+	}, pipeWireSourceTuningStage(fps)...)
+}
+
+// pipeWireNodeSourceStage connects to an already-published node rather than a
+// portal-provided one, so it carries no inherited fd. A numeric target is a node
+// ID; anything else is a node name, which survives the restarts and
+// renumbering that make an ID unusable in a saved command line.
+func pipeWireNodeSourceStage(node string, fps int) gstStage {
+	selector := fmt.Sprintf("target-object=%s", node)
+	if _, err := strconv.ParseUint(node, 10, 32); err == nil {
+		// target-object matches a name or a serial, never a node ID, so an ID has
+		// to go through path even though pipewiresrc marks it deprecated.
+		selector = fmt.Sprintf("path=%s", node)
+	}
+	return append(gstStage{"pipewiresrc", selector}, pipeWireSourceTuningStage(fps)...)
+}
+
+func pipeWireSourceTuningStage(fps int) gstStage {
+	return gstStage{
 		"do-timestamp=true",
 		fmt.Sprintf("keepalive-time=%d", frameIntervalMillis(fps)),
 		// The compositor and pipewiresrc's keepalive path both retain the latest
@@ -835,8 +872,11 @@ func buildGstVideoPipeline(source gstStage, beforeConvert, afterScale []gstStage
 	return appendGstStage(args, gstStage{"fdsink", "fd=1", "sync=false", "async=false"})
 }
 
-func startPreparedWaylandCapture(ctx context.Context, cfg CaptureConfig, encoderParts encoderResult, nodeID uint32, pwFd *os.File, dbusConn *dbus.Conn, streamSize [2]int, timestampedOutput bool) (*ScreenCapture, error) {
-	if pwFd == nil || dbusConn == nil {
+// startPreparedPipeWireCapture serves both PipeWire sources: a portal session,
+// which arrives with an inherited fd and a D-Bus connection that must outlive
+// the pipeline, and an explicitly named node, which has neither.
+func startPreparedPipeWireCapture(ctx context.Context, cfg CaptureConfig, encoderParts encoderResult, nodeID uint32, pwFd *os.File, dbusConn *dbus.Conn, streamSize [2]int, timestampedOutput bool) (*ScreenCapture, error) {
+	if cfg.PipeWireNode == "" && (pwFd == nil || dbusConn == nil) {
 		if pwFd != nil {
 			_ = pwFd.Close()
 		}
@@ -862,6 +902,10 @@ func startPreparedWaylandCapture(ctx context.Context, cfg CaptureConfig, encoder
 	// when available. The actual result is read back from the codec SPS downstream.
 	const pwFdNum = 3
 	source := pipeWireVideoSourceStage(pwFdNum, nodeID, fps)
+	if cfg.PipeWireNode != "" {
+		source = pipeWireNodeSourceStage(cfg.PipeWireNode, fps)
+		dbg("[CAPTURE] capturing PipeWire node %q", cfg.PipeWireNode)
+	}
 
 	hasCompositor := streamSize[0] > 0 && streamSize[1] > 0 && hasGstElement("compositor")
 
@@ -894,13 +938,23 @@ func startPreparedWaylandCapture(ctx context.Context, cfg CaptureConfig, encoder
 
 	dbg("[CAPTURE] gst-launch-1.0 (wayland) %s", strings.Join(gstArgs, " "))
 	cmd := exec.CommandContext(captureCtx, "gst-launch-1.0", gstArgs...)
-	cmd.ExtraFiles = []*os.File{pwFd}
+	if pwFd != nil {
+		cmd.ExtraFiles = []*os.File{pwFd}
+	}
+
+	releasePortal := func() {
+		if pwFd != nil {
+			pwFd.Close()
+		}
+		if dbusConn != nil {
+			dbusConn.Close()
+		}
+	}
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
-		pwFd.Close()
-		dbusConn.Close()
+		releasePortal()
 		return nil, fmt.Errorf("gst stdout pipe: %w", err)
 	}
 	stderr, _ := cmd.StderrPipe()
@@ -908,11 +962,12 @@ func startPreparedWaylandCapture(ctx context.Context, cfg CaptureConfig, encoder
 	waitResult, err := startGStreamerCommand(cmd)
 	if err != nil {
 		cancel()
-		pwFd.Close()
-		dbusConn.Close()
+		releasePortal()
 		return nil, fmt.Errorf("start gst-launch: %w", err)
 	}
-	pwFd.Close() // child inherited it
+	if pwFd != nil {
+		pwFd.Close() // child inherited it
+	}
 
 	go logStderr("GST", stderr)
 
