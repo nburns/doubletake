@@ -85,6 +85,13 @@ Encoder preference: \fBauto\fR, \fBnvenc\fR (NVIDIA), \fBvaapi\fR
 forced HEVC).
 Only \fBauto\fR tries fallback encoders. An explicit method fails if its
 required GStreamer encoder is unavailable. The default is \fBauto\fR.
+.IP
+A V4L2 driver that does not implement \fBVIDIOC_G_PARM\fR leaves GStreamer
+without a frame interval to probe, and the encoder then advertises one fixed
+framerate instead of the range the hardware accepts. The V4L2 pipeline adapts
+the capture rate immediately before the encoder so the requested
+.B \-fps
+still negotiates.
 .TP
 .B \-video-codec \fICODEC\fR
 Screen codec: capability-driven \fBauto\fR (default), forced \fBh264\fR, or

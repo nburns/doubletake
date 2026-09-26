@@ -23,7 +23,7 @@ import (
 type CaptureConfig struct {
 	FPS        int
 	Bitrate    int        // Video bitrate in kbps (0 = auto)
-	HWAccel    string     // "auto", "nvenc", "vaapi", "openh264", or "none"
+	HWAccel    string     // "auto", "nvenc", "vaapi", "v4l2", "openh264", or "none"
 	VideoCodec VideoCodec // empty/h264, auto (resolved before Start), or hevc
 
 	// MaxWidth/MaxHeight select the encoded canvas advertised by the receiver.
@@ -708,11 +708,12 @@ type gstStage []string
 
 // encoderResult holds the selected encoder stage and its input requirements.
 type encoderResult struct {
-	parts        gstStage
-	afterEncoder gstStage // optional caps stage placed between the encoder and the parser
-	needsVulkan  bool     // encoder needs vulkanupload immediately before it
-	rawFormat    string   // system-memory format produced by videoconvert
-	codec        VideoCodec
+	parts         gstStage
+	beforeEncoder gstStage // optional stage placed immediately before the encoder
+	afterEncoder  gstStage // optional caps stage placed between the encoder and the parser
+	needsVulkan   bool     // encoder needs vulkanupload immediately before it
+	rawFormat     string   // system-memory format produced by videoconvert
+	codec         VideoCodec
 }
 
 func frameRateStage(fps int) gstStage {
@@ -801,6 +802,9 @@ func buildGstVideoPipeline(source gstStage, beforeConvert, afterScale []gstStage
 	}
 	for _, stage := range afterScale {
 		args = appendGstStage(args, stage)
+	}
+	if len(encoder.beforeEncoder) > 0 {
+		args = appendGstStage(args, encoder.beforeEncoder)
 	}
 	if encoder.needsVulkan {
 		args = appendGstStage(args, gstStage{"vulkanupload"})
@@ -1255,6 +1259,14 @@ func selectGstEncoderWithProbe(cfg CaptureConfig, hasElement func(string) bool, 
 				fmt.Sprintf("extra-controls=controls,video_bitrate=%d,video_bitrate_mode=1,h264_i_frame_period=%d,video_gop_size=%d,video_b_frames=0,repeat_sequence_header=1",
 					bitrate*1000, keyframeInterval, keyframeInterval),
 			},
+				// A driver that does not implement VIDIOC_G_PARM leaves GStreamer
+				// without a frame interval to probe, and it then advertises a fixed
+				// framerate on the encoder's sink pad instead of the open range the
+				// hardware accepts. qcom-iris reports {29/1, 912261120/31457309},
+				// which no other rate can intersect, so an upstream framerate caps
+				// filter fails negotiation outright. videorate adapts to whatever
+				// the driver insists on and is a passthrough when the rate matches.
+				beforeEncoder: gstStage{"videorate"},
 				// Some drivers (bcm2835 on Raspberry Pi) fail STREAMON unless
 				// negotiation fixes the H.264 level; level is signaling only.
 				afterEncoder: gstStage{"video/x-h264,level=(string)4"},

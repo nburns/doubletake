@@ -726,6 +726,45 @@ func TestDetectGstEncoderSelectsExplicitV4L2(t *testing.T) {
 	if !reflect.DeepEqual(encoder.afterEncoder, wantAfter) {
 		t.Fatalf("V4L2 afterEncoder = %v, want %v", encoder.afterEncoder, wantAfter)
 	}
+	wantBefore := gstStage{"videorate"}
+	if !reflect.DeepEqual(encoder.beforeEncoder, wantBefore) {
+		t.Fatalf("V4L2 beforeEncoder = %v, want %v", encoder.beforeEncoder, wantBefore)
+	}
+}
+
+// A driver that does not implement VIDIOC_G_PARM makes GStreamer advertise a
+// single fixed framerate on the encoder's sink pad, so the requested rate must
+// reach videorate rather than the encoder itself.
+func TestV4L2PipelineAdaptsFrameRateBeforeEncoder(t *testing.T) {
+	encoder, err := detectGstEncoderWithProbe(CaptureConfig{
+		FPS:     30,
+		Bitrate: 2500,
+		HWAccel: "v4l2",
+	}, func(name string) bool { return name == "v4l2h264enc" })
+	if err != nil {
+		t.Fatalf("detectGstEncoderWithProbe: %v", err)
+	}
+
+	args := buildGstVideoPipeline(gstStage{"videotestsrc"}, []gstStage{frameRateStage(30)}, nil, encoder, 0, 0, false)
+
+	rate := indexOfStage(args, "videorate")
+	caps := indexOfStage(args, "video/x-raw,framerate=30/1")
+	enc := indexOfStage(args, "v4l2h264enc")
+	if rate < 0 || caps < 0 || enc < 0 {
+		t.Fatalf("pipeline missing expected stages: %v", args)
+	}
+	if !(caps < rate && rate < enc) {
+		t.Fatalf("want framerate caps before videorate before the encoder, got %v", args)
+	}
+}
+
+func indexOfStage(args []string, want string) int {
+	for i, arg := range args {
+		if arg == want {
+			return i
+		}
+	}
+	return -1
 }
 
 func TestDetectGstEncoderRejectsMissingExplicitOpenH264(t *testing.T) {
