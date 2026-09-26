@@ -330,6 +330,10 @@ doubletake -target 192.168.1.77 -hwaccel v4l2    # V4L2 stateful encoders (many 
 # screencast portal (gamescope on SteamOS); pw-dump lists the candidates
 doubletake -target 192.168.1.77 -pipewire-node gamescope -hwaccel v4l2
 
+# Capture a V4L2 source directly: a capture card, a loopback, or a virtual
+# camera such as the SteamVR headset view
+doubletake -target 192.168.1.77 -v4l2-device /dev/video99
+
 # OpenH264 software encoding
 doubletake -target 192.168.1.77 -hwaccel openh264
 
@@ -368,6 +372,7 @@ doubletake-ctl disconnect
 | `-target-latency-ms` | 0 | Joint audio/video playout latency override in milliseconds (`0` = automatic AirPlay policy with separate defaults) |
 | `-hwaccel` | auto | Encoder preference: `auto`, `nvenc`, `vaapi`, `v4l2`, `openh264`, `none` |
 | `-pipewire-node` | | Capture a published PipeWire node by name or id instead of using the screencast portal |
+| `-v4l2-device` | | Capture a V4L2 node directly, e.g. `/dev/video0` (capture cards, loopback and virtual cameras) |
 | `-video-codec` | auto | Screen codec: capability-driven `auto`, forced `h264`, or forced `hevc` |
 | `-no-encrypt` | false | Disable RTSP header encryption (debugging only) |
 | `-direct-key` | false | Use `shk`/`shiv` directly without SHA-512 derivation |

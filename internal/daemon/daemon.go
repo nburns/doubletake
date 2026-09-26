@@ -102,6 +102,7 @@ type Config struct {
 	NoAudio      bool
 	ShowCursor   bool
 	PipeWireNode string
+	V4L2Device   string
 	Code         string // default pairing/Digest credential; request Pin overrides it
 }
 
@@ -1314,6 +1315,7 @@ func (d *Daemon) prepareVideoCapture(ctx context.Context, restoreToken, deviceID
 		VideoCodec:   d.cfg.VideoCodec,
 		ShowCursor:   d.cfg.ShowCursor,
 		PipeWireNode: d.cfg.PipeWireNode,
+		V4L2Device:   d.cfg.V4L2Device,
 		RestoreToken: restoreToken,
 	}
 	if deviceID != "" {
@@ -1478,6 +1480,7 @@ func (d *Daemon) getOrStartCaptureGroup(entry *activeStream, restoreToken, devic
 		MaxHeight:    key.maxHeight,
 		ShowCursor:   d.cfg.ShowCursor,
 		PipeWireNode: d.cfg.PipeWireNode,
+		V4L2Device:   d.cfg.V4L2Device,
 		RestoreToken: restoreToken,
 	}
 	if deviceID != "" {

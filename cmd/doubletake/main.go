@@ -80,6 +80,7 @@ func main() {
 	x11WindowID := flag.String("x11-window-id", "", "X11 window id to capture, decimal or 0xhex")
 	x11WindowName := flag.String("x11-window-name", "", "X11 window name to capture; prefer -x11-window-id")
 	pipewireNode := flag.String("pipewire-node", "", "PipeWire video node to capture by name or id, bypassing the screencast portal")
+	v4l2Device := flag.String("v4l2-device", "", "V4L2 device node to capture, e.g. /dev/video0 (capture cards, loopback and virtual cameras)")
 	noCursor := flag.Bool("no-cursor", false, "Don't show the mouse cursor in the captured video")
 	flag.Parse()
 	if err := airplay.ValidateHWAccel(*hwaccel); err != nil {
@@ -121,6 +122,7 @@ func main() {
 			NoAudio:      *noAudio,
 			ShowCursor:   !*noCursor,
 			PipeWireNode: *pipewireNode,
+			V4L2Device:   *v4l2Device,
 			Code:         credential,
 		})
 		return
@@ -348,6 +350,7 @@ func main() {
 		X11WindowID:   xid,
 		X11WindowName: *x11WindowName,
 		PipeWireNode:  *pipewireNode,
+		V4L2Device:    *v4l2Device,
 		ShowCursor:    !*noCursor,
 	}
 	var capturePreparation *airplay.CapturePreparation

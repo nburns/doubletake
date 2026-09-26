@@ -5,6 +5,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"path/filepath"
 	"reflect"
 	"strings"
 	"syscall"
@@ -419,6 +420,69 @@ func TestPipeWireNodeCaptureNeedsNoDisplayServer(t *testing.T) {
 	}
 }
 
+func TestV4L2VideoSourceStage(t *testing.T) {
+	got := v4l2VideoSourceStage("/dev/video99")
+	want := gstStage{"v4l2src", "device=/dev/video99", "do-timestamp=true"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("V4L2 source stage = %v, want %v", got, want)
+	}
+}
+
+// A device node identifies its source, so this path must not demand a display
+// server any more than the named PipeWire node does.
+func TestV4L2CaptureNeedsNoDisplayServer(t *testing.T) {
+	t.Setenv("WAYLAND_DISPLAY", "")
+	t.Setenv("DISPLAY", "")
+
+	_, err := PrepareCapture(context.Background(), CaptureConfig{
+		FPS:        30,
+		HWAccel:    "none",
+		VideoCodec: VideoCodecH264,
+		V4L2Device: "/dev/video-doubletake-missing",
+	})
+	if err != nil && strings.Contains(err.Error(), "no display server detected") {
+		t.Fatalf("V4L2 capture still required a display server: %v", err)
+	}
+}
+
+// A source that cannot be opened must fail at startup rather than turning into
+// a silently blank stream.
+func TestValidateV4L2DeviceRejectsUnreadable(t *testing.T) {
+	err := validateV4L2Device("/dev/video-doubletake-missing")
+	if err == nil {
+		t.Fatal("validateV4L2Device accepted a missing capture device")
+	}
+	if !strings.Contains(err.Error(), "/dev/video-doubletake-missing") {
+		t.Fatalf("error %q does not name the offending device", err)
+	}
+
+	readable := filepath.Join(t.TempDir(), "node")
+	if writeErr := os.WriteFile(readable, nil, 0o600); writeErr != nil {
+		t.Fatalf("seed readable node: %v", writeErr)
+	}
+	if err := validateV4L2Device(readable); err != nil {
+		t.Fatalf("validateV4L2Device(%q) = %v, want nil", readable, err)
+	}
+}
+
+// Two explicit sources name different devices; silently preferring one would
+// stream something the caller did not ask for.
+func TestCaptureRejectsConflictingSources(t *testing.T) {
+	_, err := PrepareCapture(context.Background(), CaptureConfig{
+		FPS:          30,
+		HWAccel:      "none",
+		VideoCodec:   VideoCodecH264,
+		V4L2Device:   "/dev/video99",
+		PipeWireNode: "gamescope",
+	})
+	if err == nil {
+		t.Fatal("PrepareCapture accepted both -v4l2-device and -pipewire-node")
+	}
+	if !strings.Contains(err.Error(), "conflicting capture sources") {
+		t.Fatalf("error %q does not report the conflict", err)
+	}
+}
+
 func TestPortalStreamDimensions(t *testing.T) {
 	for _, tt := range []struct {
 		name  string
@@ -635,6 +699,15 @@ func TestBuildGstVideoPipelineSharesReceiverScaling(t *testing.T) {
 			gstStage{"ximagesrc", "display-name=:0"},
 			[]gstStage{frameRateStage(30), lowLatencyVideoQueueStage()},
 			nil,
+			encoder,
+			1280,
+			720,
+			false,
+		),
+		"V4L2": buildGstVideoPipeline(
+			v4l2VideoSourceStage("/dev/video99"),
+			nil,
+			[]gstStage{{"videorate", "drop-only=true"}, frameRateStage(30), lowLatencyVideoQueueStage()},
 			encoder,
 			1280,
 			720,

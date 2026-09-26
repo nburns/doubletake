@@ -102,6 +102,14 @@ SteamOS; list candidates with \fBpw-dump\fR. A name survives the renumbering
 that makes a saved ID unusable. Because the node identifies the source on its
 own, this works with neither \fB$WAYLAND_DISPLAY\fR nor \fB$DISPLAY\fR set.
 .TP
+.B \-v4l2-device \fIDEVICE\fR
+Capture a V4L2 node directly, such as \fB/dev/video0\fR. This covers sources that
+publish video outside any display server: capture cards, loopback devices and
+virtual cameras, including the SteamVR headset view exported by a Steam Frame.
+Like \fB\-pipewire-node\fR it needs neither \fB$WAYLAND_DISPLAY\fR nor
+\fB$DISPLAY\fR. A device that cannot be opened is reported at startup rather
+than becoming a blank stream. Only one capture source may be given at a time.
+.TP
 .B \-video-codec \fICODEC\fR
 Screen codec: capability-driven \fBauto\fR (default), forced \fBh264\fR, or
 forced \fBhevc\fR. Automatic HEVC requires receiver feature 42, a session-time
